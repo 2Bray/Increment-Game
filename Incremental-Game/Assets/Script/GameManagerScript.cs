@@ -1,408 +1,190 @@
-﻿using System.Collections;
+﻿using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UI;
 
 public class GameManagerScript : MonoBehaviour
 {
-    [SerializeField] private Transform canva;
-    [SerializeField] private AxeScript axeScript;
-    [SerializeField] private Transform panel;
-    [SerializeField] private Text goldStat;
-    private childDisableScript goldChild;
-    [SerializeField] private GameObject errorMsg;
-    [SerializeField] private Button[] coolDown;
-    [SerializeField] private GameObject[] resultStat;
+    private static GameManagerScript _instance = null;
 
-    private int gold = 0;
-    private int log = 0;
-    private int board = 0;
-    private int table = 0;
-    private int durability;
-    private int carStorageLvl;
-    private int carSpeedLvl;
-    private int lotteryTicket;
+    public static GameManagerScript Instance
+    {
+        get
+        {
+            if (_instance == null)
+            {
+                _instance = FindObjectOfType<GameManagerScript>();
+            }
+            return _instance;
+        }
+    }
 
+    // Fungsi [Range (min, max)] ialah menjaga value agar tetap berada di antara min dan max-nya 
+    [Range(0f, 1f)]
+    public float AutoCollectPercentage = 0.1f;
+    public ResourceConfig[] ResourcesConfigs;
+    public Sprite[] ResourcesSprites;
 
-    private bool logCutter = false;
-    private bool crafting = false;
-    private bool silat = false;
-    private bool free = false;
+    public Transform ResourcesParent;
+    public GameObject ResourcePrefab;
 
-    public string[] listAxe = {"null","Wood","Iron","Obsidian"};
+    public Text GoldInfo;
+    public Text AutoCollectInfo;
 
+    private List<ResourceControllerScript> _activeResources = new List<ResourceControllerScript>();
+    private List<TapTextScript> _tapTextPool = new List<TapTextScript>();
+    private float _collectSecond;
+    private double _totalGold;
+
+    public GameObject TapTextPrefab;
+
+    public Transform CoinIcon;
+
+    public double TotalGold { get; private set; }
 
     private void Start()
     {
-        durability = -1;
-        axeScript.ChangeAxe(0);
-        goldStat.text = gold.ToString();
-        goldChild = goldStat.transform.GetChild(0).GetComponent<childDisableScript>();
+        _instance = this;
+        AddAllResources();
     }
 
-    public void setGold(int i)
+    private void Update()
     {
-        gold += i;
-        goldStat.text = gold.ToString();
-        string nominal = "";
-        Color clr = new Color();
-        if (i > 0)
+        // Fungsi untuk selalu mengeksekusi CollectPerSecond setiap detik 
+        _collectSecond += Time.unscaledDeltaTime;
+
+        if (_collectSecond >= 1f)
         {
-            nominal = "+";
-            clr = Color.black;
+            CollectPerSecond();
+            _collectSecond = 0f;
         }
-        else 
-        { 
-            nominal = "-";
-            clr = Color.red;
-        }
-        goldChild.setAwake(nominal+i,clr);
+        CheckResourceCost();
+
+        CoinIcon.transform.localScale = Vector3.LerpUnclamped(CoinIcon.transform.localScale, Vector3.one * 2f, 0.15f);
+        CoinIcon.transform.Rotate(0f, 0f, Time.deltaTime * -100f);
     }
 
-    public int GetGold() => gold;
-    public int GetLog() => log;
-    public void setLog(int i) => log += i;
-    public int GetBoard() => board;
-    public void setBoard(int i) => board += i;
-    public int GetTable() => table;
-    public void setTable(int i) => table += i;
-    public int GetLotteryTicket() => lotteryTicket;
-    public void setLotteryTicket(int i) => lotteryTicket += i;
-    public void SetSilat() => silat = true;
-    public void SetLogCutter() => logCutter = true;
-    public bool GetLogCutter() => logCutter;
-    public void SetCrafting() => crafting = true;
-    public bool GetCrafting() => crafting;
-    public int GetCarStorageLvl()
+    private void AddAllResources()
     {
-        int result = 0;
-        switch (carStorageLvl)
+        bool showResources = true;
+        foreach (ResourceConfig config in ResourcesConfigs)
         {
-            case 0:
-                result = 60;
-                break;
-            case 1:
-                result = 90;
-                break;
-            case 2:
-                result = 150;
-                break;
-            case 3:
-                result = 280;
-                break;
-            case 4:
-                result = 400;
-                break;
-        }
-        return result;
-    }
-    public int GetCarSpeedLvl()
-    {
-        int result = 0;
-        switch (carSpeedLvl)
-        {
-            case 0:
-                result = 120;
-                break;
-            case 1:
-                result = 110;
-                break;
-            case 2:
-                result = 90;
-                break;
-            case 3:
-                result = 60;
-                break;
-            case 4:
-                result = 20;
-                break;
-        }
-        return result;
-    }
+            GameObject obj = Instantiate(ResourcePrefab.gameObject, ResourcesParent, false);
+            ResourceControllerScript resource = obj.GetComponent<ResourceControllerScript>();
 
-    public void CutDown()
-    {
-        if (durability < 0) durability = axeScript.GetNewAxe();
-        else durability = axeScript.CutDown(durability, silat, this,canva);
-    }
-
-    public void BuyAxe(int idx)
-    {
-        switch (idx)
-        {
-            case 1:
-                if (GetLog() >= 3) setLog(-3);
-                else
-                {
-                    GameObject go = Instantiate(errorMsg, canva);
-                    go.GetComponent<ErrorMsgScript>().Called("Not Enaugh Material");
-                    return;
-                }
-                panel.GetChild(0).gameObject.SetActive(false);
-                panel.gameObject.SetActive(false);
-                break;
-            case 2:
-                if (GetGold()>=300) setGold(-300);
-                else
-                {
-                    GameObject go = Instantiate(errorMsg, panel);
-                    go.GetComponent<ErrorMsgScript>().Called("Not Enaugh Gold");
-                    return;
-                }
-                break;
-            case 3:
-                if (GetGold() >= 1000) setGold(-1000);
-                else
-                {
-                    GameObject go = Instantiate(errorMsg, panel);
-                    go.GetComponent<ErrorMsgScript>().Called("Not Enaugh Gold");
-                    return;
-                }
-                break;
-        }
-        axeScript.ChangeAxe(idx);
-    }
-
-    public void ClickStorage()
-    {
-        GameObject storage = panel.GetChild(1).gameObject;
-        storage.SetActive(true);
-        storage.GetComponent<StorageScript>().OpenStorage(log,board,table);
-        panel.gameObject.SetActive(true);
-    }
-
-    public void ReadyAndSell(int pLog, int pBoar, int pTable, int time, GameObject chld)
-    {
-        startCoolDownButton(coolDown[0], time);
-        StartCoroutine(CarGoingSell(pLog,pBoar,pTable,time, time, coolDown[0].transform.GetChild(1).GetComponent<Slider>()));
-
-        chld.SetActive(false);
-        panel.gameObject.SetActive(false);
-    }
-
-    private IEnumerator CarGoingSell(int pLog, int pBoar, int pTable, int T, int Tmax,Slider progress)
-    {
-        yield return new WaitForSecondsRealtime(1);
-        T--;
-        if (T<0)
-        {
-            int recieve = 0;
-            recieve += pLog;
-            recieve += pBoar;
-            recieve += pTable / 120 * 180;
-            setGold(recieve);
-            endCooldownButton(coolDown[0]);
-        } else
-        {
-            progress.value = Tmax - T;
-            StartCoroutine(CarGoingSell(pLog, pBoar, pTable, T, Tmax, progress));
+            resource.SetConfig(config);
+            obj.gameObject.SetActive(showResources);
+            if (showResources && !resource.IsUnlocked)
+            {
+                showResources = false;
+            }
+            _activeResources.Add(resource);
         }
     }
 
-    public void setUpgradePrice(string item, Text lvl,Text prc)
+    private void CollectPerSecond()
     {
-        string result = "";
-        switch (item)
+        double output = 0;
+        foreach (ResourceControllerScript resource in _activeResources)
         {
-            case "storage":
-                switch (carStorageLvl)
-                {
-                    case 0:
-                        result = "500";
-                        break;
-                    case 1:
-                        result = "1200";
-                        break;
-                    case 2:
-                        result = "3360";
-                        break;
-                    case 3:
-                        result = "8736";
-                        break;
-                    default:
-                        result = "Max";
-                        break;
-                }
-                lvl.text = "Lvl "+(carStorageLvl + 1);
-                break;
-            case "time":
-                switch (carSpeedLvl)
-                {
-                    case 0:
-                        result = "500";
-                        break;
-                    case 1:
-                        result = "1200";
-                        break;
-                    case 2:
-                        result = "3360";
-                        break;
-                    case 3:
-                        result = "8736";
-                        break;
-                    default:
-                        result = "Max";
-                        break;
-                }
-                lvl.text = "Lvl "+(carSpeedLvl + 1);
-                break;
+            if (resource.IsUnlocked)
+            {
+                output += resource.GetOutput();
+            }
         }
-        prc.text = result;
+
+        output *= AutoCollectPercentage;
+
+        // Fungsi ToString("F1") ialah membulatkan angka menjadi desimal yang memiliki 1 angka di belakang koma 
+        AutoCollectInfo.text = $"Auto Collect: { output.ToString("F1") } / second";
+        _instance.AddGold(output);
     }
 
-    public void UpgradeCar(string item)
+    public void AddGold(double value)
     {
-        int price = 0;
-        switch (item)
+        _totalGold += value;
+        GoldInfo.text = $"Gold: { _totalGold.ToString("0") }";
+        TotalGold = _totalGold;
+    }
+
+    public void CollectByTap(Vector3 tapPosition, Transform parent)
+    {
+        double output = 0;
+        foreach (ResourceControllerScript resource in _activeResources)
         {
-            case "UpStorage":
-                switch (carStorageLvl)
-                {
-                    case 0:
-                        price = 500;
-                        break;
-                    case 1:
-                        price = 1200;
-                        break;
-                    case 2:
-                        price = 3360;
-                        break;
-                    case 3:
-                        price = 8736;
-                        break;
-                    default:
-                        price = 0;
-                        break;
-                }
-                if (price > 0 && price <= GetGold())
-                {
-                    carStorageLvl++;
-                    setGold(-price);
-                }
-                break;
-            case "UpTime":
-                switch (carSpeedLvl)
-                {
-                    case 0:
-                        price = 500;
-                        break;
-                    case 1:
-                        price = 1200;
-                        break;
-                    case 2:
-                        price = 3360;
-                        break;
-                    case 3:
-                        price = 8736;
-                        break;
-                    default:
-                        price = 0;
-                        break;
-                }
-                if (price > 0 && price <= GetGold())
-                {
-                    carSpeedLvl++;
-                    setGold(-price);
-                }
-                break;
+            if (resource.IsUnlocked)
+            {
+                output += resource.GetOutput();
+            }
         }
+
+        TapTextScript tapText = GetOrCreateTapText();
+        tapText.transform.SetParent(parent, false);
+        tapText.transform.position = tapPosition;
+
+        tapText.Text.text = $"+{ output.ToString("0") }";
+        tapText.gameObject.SetActive(true);
+        CoinIcon.transform.localScale = Vector3.one * 1.75f;
         
+        _instance.AddGold(output);
     }
 
-    public IEnumerator CraftingBoard(int log)
+    private TapTextScript GetOrCreateTapText()
     {
-        for (int i = 0; i < log / 3; i++)
+        TapTextScript tapText = _tapTextPool.Find(t => !t.gameObject.activeSelf);
+        if (tapText == null)
         {
-            yield return new WaitUntil(() => free);
-            free = false;
-            startCoolDownButton(coolDown[1], 20);
-            StartCoroutine(progressCraftBoard(20, 20, coolDown[1].transform.GetChild(1).GetComponent<Slider>()));
+            tapText = Instantiate(TapTextPrefab).GetComponent<TapTextScript>();
+            _tapTextPool.Add(tapText);
+        }
+
+        return tapText;
+    }
+
+    public void ShowNextResource()
+    {
+        foreach (ResourceControllerScript resource in _activeResources)
+        {
+            if (!resource.gameObject.activeSelf)
+            {
+                resource.gameObject.SetActive(true);
+                break;
+            }
         }
     }
 
-    private IEnumerator progressCraftBoard(int T, int Tmax, Slider progress)
+    private void CheckResourceCost()
     {
-        yield return new WaitForSecondsRealtime(1);
-        T--;
-        if (T < 0)
+        foreach (ResourceControllerScript resource in _activeResources)
         {
-            int r = Random.Range(0, 100);
-            if (r < 59)
+            bool isBuyable = false;
+            if (resource.IsUnlocked)
             {
-                setBoard(10);
-                ResultTextScript t = Instantiate(resultStat[0], progress.transform.parent).GetComponent<ResultTextScript>();
-                t.ovrdText("+10", Color.black, 32);
+                isBuyable = TotalGold >= resource.GetUpgradeCost();
             }
             else
             {
-                ResultTextScript t = Instantiate(resultStat[0], progress.transform.parent).GetComponent<ResultTextScript>();
-                t.ovrdText("Failed", Color.red, 24);
+                isBuyable = TotalGold >= resource.GetUnlockCost();
             }
-            free = true;
-            endCooldownButton(coolDown[1]);
-        }
-        else
-        {
-            progress.value = Tmax - T;
-            StartCoroutine(progressCraftBoard (T, Tmax, progress));
+            resource.ResourceImage.sprite = ResourcesSprites[isBuyable ? 1 : 0];
         }
     }
 
-    public void craftTable()
-    {
-        startCoolDownButton(coolDown[2], 60);
-        StartCoroutine(progressTableCrafting(60, 60, coolDown[2].transform.GetChild(1).GetComponent<Slider>()));
-    }
-
-    private IEnumerator progressTableCrafting(int T, int Tmax, Slider progress)
-    {
-        yield return new WaitForSecondsRealtime(1);
-        T--;
-        if (T < 0)
-        {
-            if (Random.Range(0, 100) < 69)
-            {
-                setTable(1);
-                ResultTextScript t = Instantiate(resultStat[0], progress.transform.parent).GetComponent<ResultTextScript>();
-                t.ovrdText("+1", Color.black, 32);
-            }
-            else
-            {
-                ResultTextScript t = Instantiate(resultStat[0], progress.transform.parent).GetComponent<ResultTextScript>();
-                t.ovrdText("Broken", Color.red, 24);
-            }
-
-            endCooldownButton(coolDown[2]);
-        }
-        else
-        {
-            progress.value = Tmax - T;
-            StartCoroutine(progressTableCrafting(T, Tmax, progress));
-        }
-    }
-
-    public void sendErrorMsg(string str)
-    {
-        GameObject go = Instantiate(errorMsg, canva);
-        go.GetComponent<ErrorMsgScript>().Called(str);
-    }
-
-    public void startCoolDownButton(Button b, int time)
-    {
-        b.interactable = false;
-        Slider progresSlider = b.transform.GetChild(1).GetComponent<Slider>();
-        progresSlider.gameObject.SetActive(true);
-        progresSlider.value = 0;
-        progresSlider.maxValue = time;
-    }
-
-    public void endCooldownButton(Button b)
-    {
-        b.transform.GetChild(1).gameObject.SetActive(false);
-        b.interactable = true;
-    }
-
-    public void QuitGame()
+    public void clickExit()
     {
         Application.Quit();
     }
+
+}
+
+
+
+// Fungsi System.Serializable adalah agar object bisa di-serialize dan
+// value dapat di-set dari inspector
+[System.Serializable]
+public struct ResourceConfig
+{
+    public string Name;
+    public double UnlockCost;
+    public double UpgradeCost;
+    public double Output;
 }
